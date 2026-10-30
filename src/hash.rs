@@ -3,8 +3,7 @@
 //! This module provides [`ObjectId`], a 256-bit identifier derived from
 //! the SHA-256 hash of an object's contents.
 //!
-//! Object identifiers can be converted to and from hexadecimal strings
-//! and split into directory and file components for filesystem storage.
+//! Object identifiers can be converted to and from hexadecimal strings.
 
 use sha2::{Digest, Sha256};
 
@@ -15,14 +14,6 @@ pub struct ObjectId([u8; 32]);
 impl ObjectId {
     pub fn new(data: impl AsRef<[u8]>) -> Self {
         Self(Sha256::digest(data.as_ref()).into())
-    }
-
-    pub fn folder(&self) -> String {
-        hex::encode(&self.0[..1])
-    }
-
-    pub fn file(&self) -> String {
-        hex::encode(&self.0[1..])
     }
 }
 
@@ -57,17 +48,6 @@ mod tests {
         assert_eq!(obj_id.to_string(), expected);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_object_id_path_components() {
-        let obj_id = ObjectId::new("This are file contents.");
-        let expected_folder = String::from("b4");
-        let expected_file =
-            String::from("fa323990517f99e3c3d198b2949e6d1a38224dfa31427e2a79cc1864d3c6c3");
-
-        assert_eq!(expected_file, obj_id.file());
-        assert_eq!(expected_folder, obj_id.folder());
     }
 
     #[test]
