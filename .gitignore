@@ -27,3 +27,7 @@ rustc-ice-*.txt
 # Added by cargo
 
 /target
+
+
+# cas files
+.cas/
