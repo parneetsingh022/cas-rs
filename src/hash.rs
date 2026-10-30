@@ -6,7 +6,6 @@
 //! Object identifiers can be converted to and from hexadecimal strings
 //! and split into directory and file components for filesystem storage.
 
-use hex;
 use sha2::{Digest, Sha256};
 
 /// A SHA-256 identifier for content-addressed objects.
