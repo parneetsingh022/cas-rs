@@ -1,6 +1,15 @@
+//! Content-addressed object identifiers.
+//!
+//! This module provides [`ObjectId`], a 256-bit identifier derived from
+//! the SHA-256 hash of an object's contents.
+//!
+//! Object identifiers can be converted to and from hexadecimal strings
+//! and split into directory and file components for filesystem storage.
+
 use hex;
 use sha2::{Digest, Sha256};
 
+/// A SHA-256 identifier for content-addressed objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ObjectId([u8; 32]);
 
