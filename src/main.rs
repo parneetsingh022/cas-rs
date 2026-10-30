@@ -7,9 +7,8 @@ use std::path::Path;
 
 use anyhow::Context;
 use clap::Parser;
-use cli::Cli;
-use object::Object;
-use store::ObjectStore;
+
+use crate::{cli::Cli, object::Object, store::ObjectStore};
 
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
