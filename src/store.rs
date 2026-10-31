@@ -4,7 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{hash::ObjectId, object::Object};
+use crate::{
+    errors::{Error, Result},
+    hash::ObjectId,
+    object::Object,
+};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
@@ -18,9 +22,9 @@ impl ObjectStore {
         }
     }
 
-    pub fn put(&self, object: &Object) -> io::Result<()> {
+    pub fn put(&self, object: &Object) -> Result<()> {
         if !self.root.exists() {
-            return Err(io::ErrorKind::NotFound.into());
+            return Err(Error::InvalidPath { path: self.root });
         }
 
         let obj_path = self.object_path(object.id());
