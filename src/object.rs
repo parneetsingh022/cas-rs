@@ -1,5 +1,7 @@
-use std::{fs, io, path::Path};
+use std::io;
+use std::{fs, path::Path};
 
+use crate::errors::{Error, Result};
 use crate::hash::ObjectId;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -16,8 +18,15 @@ impl Object {
         }
     }
 
-    pub fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
-        let data = fs::read(path)?;
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
+        let path_ref = path.as_ref();
+        let data = fs::read(path_ref).map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => Error::InvalidPath {
+                path: path_ref.to_path_buf(),
+            },
+            _ => Error::Io(e),
+        })?;
+
         Ok(Self::new(&data))
     }
 
@@ -71,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn object_from_file() -> io::Result<()> {
+    fn object_from_file() -> Result<()> {
         let mut file = tempfile::NamedTempFile::new()?;
         use std::io::Write;
 
@@ -86,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn object_from_empty_file() -> io::Result<()> {
+    fn object_from_empty_file() -> Result<()> {
         let file = tempfile::NamedTempFile::new()?;
         let object = Object::from_file(file.path())?;
 
@@ -97,15 +106,15 @@ mod tests {
     }
 
     #[test]
-    fn object_from_missing_file() -> io::Result<()> {
+    fn object_from_missing_file() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("missing.txt");
 
-        let result = Object::from_file(path);
+        let result = Object::from_file(&path);
 
         assert!(matches!(
             result,
-            Err(ref error) if error.kind() == io::ErrorKind::NotFound
+            Err(Error::InvalidPath { path: ref p }) if p == &path
         ));
 
         Ok(())

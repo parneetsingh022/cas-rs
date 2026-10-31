@@ -5,6 +5,7 @@
 //!
 //! Object identifiers can be converted to and from hexadecimal strings.
 
+use crate::errors::{Error, Result};
 use sha2::{Digest, Sha256};
 
 /// A SHA-256 identifier for content-addressed objects.
@@ -27,9 +28,9 @@ impl std::fmt::Display for ObjectId {
 }
 
 impl std::str::FromStr for ObjectId {
-    type Err = hex::FromHexError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         let mut bytes = [0u8; 32];
         hex::decode_to_slice(s, &mut bytes)?;
         Ok(Self(bytes))
@@ -41,7 +42,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_object_id_init() -> Result<(), hex::FromHexError> {
+    fn test_object_id_init() -> Result<()> {
         let obj_id = ObjectId::new("Hello World");
         let expected = "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e";
 
@@ -90,5 +91,14 @@ mod tests {
         assert!("invalid".parse::<ObjectId>().is_err());
         assert!("abcd".parse::<ObjectId>().is_err());
         assert!("z".repeat(64).parse::<ObjectId>().is_err());
+    }
+
+    #[test]
+    fn invalid_object_id_returns_hex_parse_error() {
+        let err_length = "abcd".parse::<ObjectId>().unwrap_err();
+        assert!(matches!(err_length, Error::HexParse(_)));
+
+        let err_chars = "z".repeat(64).parse::<ObjectId>().unwrap_err();
+        assert!(matches!(err_chars, Error::HexParse(_)));
     }
 }

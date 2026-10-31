@@ -4,7 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{hash::ObjectId, object::Object};
+use crate::{
+    errors::{Error, Result},
+    hash::ObjectId,
+    object::Object,
+};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
@@ -18,9 +22,11 @@ impl ObjectStore {
         }
     }
 
-    pub fn put(&self, object: &Object) -> io::Result<()> {
+    pub fn put(&self, object: &Object) -> Result<()> {
         if !self.root.exists() {
-            return Err(io::ErrorKind::NotFound.into());
+            return Err(Error::InvalidPath {
+                path: self.root.to_path_buf(),
+            });
         }
 
         let obj_path = self.object_path(object.id());
@@ -39,7 +45,7 @@ impl ObjectStore {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 return Ok(());
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
 
         Ok(())
@@ -78,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn put_stores_object() -> io::Result<()> {
+    fn put_stores_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"Hello World");
@@ -94,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn put_creates_parent_directories() -> io::Result<()> {
+    fn put_creates_parent_directories() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"Hello World");
@@ -109,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn put_existing_object_succeeds() -> io::Result<()> {
+    fn put_existing_object_succeeds() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"Hello World");
@@ -123,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn put_does_not_overwrite_existing_object() -> io::Result<()> {
+    fn put_does_not_overwrite_existing_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"Hello World");
@@ -140,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn put_empty_object() -> io::Result<()> {
+    fn put_empty_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"");
@@ -156,15 +162,14 @@ mod tests {
     }
 
     #[test]
-    fn put_fails_when_root_does_not_exist() -> io::Result<()> {
+    fn put_fails_when_root_does_not_exist() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path().join("missing"));
         let object = Object::new(b"Hello World");
 
         let error = store.put(&object).unwrap_err();
 
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
-
+        assert!(matches!(error, Error::InvalidPath { .. }));
         Ok(())
     }
 }
