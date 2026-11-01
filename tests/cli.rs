@@ -10,9 +10,9 @@ fn test_put_prints_hash_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
     let workspace = tempdir()?;
 
     let mut file = NamedTempFile::new()?;
-    write!(file, "test data")?;
+    write!(file, "test put prints hash to stdout")?;
 
-    let expected_hash = "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9";
+    let expected_hash = "029d420eff8ca02f0d4b5b2934bb2941461cdd652bf032c92069e93706fc038e";
 
     let mut cmd = Command::cargo_bin(BIN_NAME)?;
 
@@ -33,9 +33,9 @@ fn test_put_creates_object_file_in_store() -> Result<(), Box<dyn std::error::Err
     let workspace = tempdir()?;
 
     let mut file = NamedTempFile::new()?;
-    write!(file, "test data")?;
+    write!(file, "test put object file in store")?;
 
-    let expected_hash = "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9";
+    let expected_hash = "9797794c0dfb7457dd0be3e9b0b5fd85baa393b192db93b7b423f4fd3d21ae8e";
 
     let mut cmd = Command::cargo_bin(BIN_NAME)?;
 
