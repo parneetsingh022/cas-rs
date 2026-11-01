@@ -1,8 +1,10 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
+
+use tempfile::NamedTempFile;
 
 use crate::{
     errors::{Error, Result},
@@ -35,20 +37,16 @@ impl ObjectStore {
             fs::create_dir_all(parent)?;
         }
 
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(obj_path);
+        // Write to a temp file in the same directory so the final rename is atomic
+        // and an interrupted write never leaves a partial object at its hash path.
+        let mut temp = NamedTempFile::new_in(obj_path.parent().unwrap_or(&self.root))?;
+        temp.write_all(object.data())?;
 
-        match file {
-            Ok(mut file) => file.write_all(object.data())?,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                return Ok(());
-            }
-            Err(error) => return Err(error.into()),
+        match temp.persist_noclobber(&obj_path) {
+            Ok(_) => Ok(()),
+            Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error.error.into()),
         }
-
-        Ok(())
     }
 
     fn object_path(&self, id: ObjectId) -> PathBuf {
@@ -141,6 +139,22 @@ mod tests {
         store.put(&object)?;
 
         assert_eq!(fs::read(path)?, b"Existing contents");
+
+        Ok(())
+    }
+
+    #[test]
+    fn put_leaves_no_temp_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = ObjectStore::new(dir.path());
+        let object = Object::new(b"Hello World");
+
+        store.put(&object)?;
+        store.put(&object)?;
+
+        let path = store.object_path(object.id());
+
+        assert_eq!(fs::read_dir(path.parent().unwrap())?.count(), 1);
 
         Ok(())
     }
