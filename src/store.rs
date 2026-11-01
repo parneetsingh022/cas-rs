@@ -33,6 +33,11 @@ impl ObjectStore {
 
         let obj_path = self.object_path(object.id());
 
+        // Early return if an object already exist.
+        if obj_path.exists() {
+            return Ok(());
+        }
+
         if let Some(parent) = obj_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -184,6 +189,35 @@ mod tests {
         let error = store.put(&object).unwrap_err();
 
         assert!(matches!(error, Error::InvalidPath { .. }));
+        Ok(())
+    }
+
+    #[test]
+    fn test_put_existing_object_skips_write() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = ObjectStore::new(dir.path());
+        let object = Object::new(b"Hello world");
+
+        store.put(&object)?;
+
+        let obj_path = store.object_path(object.id());
+        let target_dir = obj_path.parent().unwrap_or(dir.path());
+
+        // We sill set the permission of temp folder to readonly.
+        // Now when we try to save an existing object, if we are
+        // still writing a temp-object-file this test should fail.
+        let mut perm = fs::metadata(&target_dir)?.permissions();
+        perm.set_readonly(true);
+        fs::set_permissions(target_dir, perm.clone())?;
+
+        store
+            .put(&object)
+            .expect("put() attempted to write a temporary file for an already existing object.\n");
+
+        // Restore permissions so the tempdir can be safely deleted on cleanup
+        perm.set_readonly(false);
+        fs::set_permissions(target_dir, perm)?;
+
         Ok(())
     }
 }
