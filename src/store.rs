@@ -204,11 +204,12 @@ mod tests {
         let target_dir = obj_path.parent().unwrap_or(dir.path());
 
         let original_perm = fs::metadata(target_dir)?.permissions();
-        let readonly_perm = original_perm.clone();
+        let mut readonly_perm = original_perm.clone();
 
         // Set the permission of target_dir folder to readonly.
         // Now when we try to save an existing object, if we are
-        // still writing a temp-object-file this test should fail.        readonly_perm.set_readonly(true);
+        // still writing a temp-object-file this test should fail.
+        readonly_perm.set_readonly(true);
         fs::set_permissions(target_dir, readonly_perm)?;
 
         store
