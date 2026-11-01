@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     let object = Object::from_file(&args.file)
         .with_context(|| format!("failed to read '{}'", args.file.display()))?;
 
-    let store = ObjectStore::new(Path::new("invalid/path"));
+    let store = ObjectStore::new(Path::new("."));
 
     store.put(&object)?;
 
