@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
@@ -30,23 +30,18 @@ impl ObjectStore {
         }
 
         let obj_path = self.object_path(object.id());
+        let parent = obj_path.parent().expect("object path has a parent");
+        fs::create_dir_all(parent)?;
 
-        if let Some(parent) = obj_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(obj_path);
-
-        match file {
-            Ok(mut file) => file.write_all(object.data())?,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+        if let Ok(existing) = fs::read(&obj_path) {
+            if existing == object.data() {
                 return Ok(());
             }
-            Err(error) => return Err(error.into()),
         }
+
+        let mut temp_file = tempfile::NamedTempFile::new_in(parent)?;
+        temp_file.write_all(object.data())?;
+        temp_file.persist(&obj_path).map_err(|error| error.error)?;
 
         Ok(())
     }
@@ -129,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn put_does_not_overwrite_existing_object() -> Result<()> {
+    fn put_repairs_incomplete_existing_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path());
         let object = Object::new(b"Hello World");
@@ -140,7 +135,7 @@ mod tests {
 
         store.put(&object)?;
 
-        assert_eq!(fs::read(path)?, b"Existing contents");
+        assert_eq!(fs::read(path)?, object.data());
 
         Ok(())
     }
