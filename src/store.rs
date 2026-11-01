@@ -206,17 +206,18 @@ mod tests {
         // We sill set the permission of temp folder to readonly.
         // Now when we try to save an existing object, if we are
         // still writing a temp-object-file this test should fail.
-        let mut perm = fs::metadata(&target_dir)?.permissions();
-        perm.set_readonly(true);
-        fs::set_permissions(target_dir, perm.clone())?;
+        let original_perm = fs::metadata(target_dir)?.permissions();
+        let mut readonly_perm = original_perm.clone();
+
+        readonly_perm.set_readonly(true);
+        fs::set_permissions(target_dir, readonly_perm)?;
 
         store
             .put(&object)
             .expect("put() attempted to write a temporary file for an already existing object.\n");
 
         // Restore permissions so the tempdir can be safely deleted on cleanup
-        perm.set_readonly(false);
-        fs::set_permissions(target_dir, perm)?;
+        fs::set_permissions(target_dir, original_perm)?;
 
         Ok(())
     }
