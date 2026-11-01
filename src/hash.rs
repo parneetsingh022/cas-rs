@@ -1,12 +1,11 @@
 //! Content-addressed object identifiers.
 //!
 //! This module provides [`ObjectId`], a 256-bit identifier derived from
-//! the SHA-256 hash of an object's contents.
+//! the blake3 hash of an object's contents.
 //!
 //! Object identifiers can be converted to and from hexadecimal strings.
 
 use crate::errors::{Error, Result};
-use sha2::{Digest, Sha256};
 
 /// A SHA-256 identifier for content-addressed objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -14,7 +13,7 @@ pub struct ObjectId([u8; 32]);
 
 impl ObjectId {
     pub fn new(data: impl AsRef<[u8]>) -> Self {
-        Self(Sha256::digest(data.as_ref()).into())
+        Self(blake3::hash(data.as_ref()).into())
     }
 }
 
@@ -44,7 +43,7 @@ mod tests {
     #[test]
     fn test_object_id_init() -> Result<()> {
         let obj_id = ObjectId::new("Hello World");
-        let expected = "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e";
+        let expected = "41f8394111eb713a22165c46c90ab8f0fd9399c92028fd6d288944b23ff5bf76";
 
         assert_eq!(obj_id.to_string(), expected);
 
@@ -57,7 +56,7 @@ mod tests {
 
         assert_eq!(
             id.to_string(),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
         );
     }
 
