@@ -1,10 +1,16 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(version, about)]
 pub struct Cli {
-    /// Path to the file to process.
-    pub file: PathBuf,
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand)]
+pub enum Command {
+    /// Save a file to the local store and output its unique hash.
+    Put { file: PathBuf },
 }

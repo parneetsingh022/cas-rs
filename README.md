@@ -6,7 +6,7 @@ A lightweight content-addressable storage engine written in Rust.
 The following command stores a file into the local CAS:
 
 ```bash
-cargo run -- <file_path>
+cargo run -- put <file_path>
 ```
 
 The file is copied into the ./cas/objects/ directory relative to the current working directory. To prevent OS-level performance degradation from storing thousands of files in a single folder, cas-rs uses a two-level sharded directory structure.

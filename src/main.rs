@@ -10,13 +10,26 @@ use std::path::Path;
 use anyhow::Context;
 use clap::Parser;
 
-use crate::{cli::Cli, object::Object, store::ObjectStore};
+use crate::{
+    cli::{Cli, Command},
+    object::Object,
+    store::ObjectStore,
+};
 
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
-    let object = Object::from_file(&args.file)
-        .with_context(|| format!("failed to read '{}'", args.file.display()))?;
+    match args.command {
+        Command::Put { file } => handle_put(file)?,
+    }
+
+    Ok(())
+}
+
+fn handle_put(file: impl AsRef<Path>) -> anyhow::Result<()> {
+    let file = file.as_ref();
+    let object =
+        Object::from_file(file).with_context(|| format!("failed to read '{}'", file.display()))?;
 
     let store = ObjectStore::new(Path::new("."));
 
