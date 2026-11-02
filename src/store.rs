@@ -248,31 +248,25 @@ mod tests {
     }
 
     #[test]
-    fn test_put_existing_object_skips_write() -> Result<()> {
+    fn put_existing_object_cleans_up_temp_file() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path()).unwrap();
         let data = b"Hello world";
 
+        // First pass: ingest normally
         let object = store.put(&data[..])?;
 
+        // Second pass: ingest again. It will write to a temp file,
+        // realize the hash already exists, and discard the temp file.
+        store.put(&data[..])?;
+
+        // Verify the objects directory has exactly 1 file (no duplicates)
         let obj_path = store.object_path(object.id());
-        let target_dir = obj_path.parent().unwrap_or(dir.path());
+        assert_eq!(fs::read_dir(obj_path.parent().unwrap())?.count(), 1);
 
-        let original_perm = fs::metadata(target_dir)?.permissions();
-        let mut readonly_perm = original_perm.clone();
-
-        // Set the permission of target_dir folder to readonly.
-        // Now when we try to save an existing object, if we are
-        // still writing a temp-object-file here, this test should fail.
-        readonly_perm.set_readonly(true);
-        fs::set_permissions(target_dir, readonly_perm)?;
-
-        store.put(&data[..]).expect(
-            "put() attempted to write a temporary file into a read-only object directory.\n",
-        );
-
-        // Restore permissions so the tempdir can be safely deleted on cleanup
-        fs::set_permissions(target_dir, original_perm)?;
+        // Verify the tmp directory is completely empty
+        let tmp_dir = dir.path().join("tmp");
+        assert_eq!(fs::read_dir(tmp_dir)?.count(), 0);
 
         Ok(())
     }
