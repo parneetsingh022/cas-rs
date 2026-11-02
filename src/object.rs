@@ -1,5 +1,9 @@
 use crate::errors::{Error, Result};
 
+// =============================================================================
+// OBJECT ID
+// =============================================================================
+
 /// A SHA-256 identifier for content-addressed objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ObjectId([u8; 32]);
@@ -29,6 +33,10 @@ impl std::str::FromStr for ObjectId {
     }
 }
 
+// =============================================================================
+// OBJECT METADATA
+// =============================================================================
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ObjectKind {
     Blob,
@@ -41,6 +49,10 @@ impl std::fmt::Display for ObjectKind {
         }
     }
 }
+
+// =============================================================================
+// OBJECT
+// =============================================================================
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Object {
