@@ -52,7 +52,7 @@ impl ObjectStore {
             hasher.update(chunk);
             temp.write_all(chunk)?;
 
-            size += bytes_read as usize;
+            size += bytes_read;
         }
 
         let object_id = hasher.finalize();
