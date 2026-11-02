@@ -5,14 +5,13 @@ mod hash;
 mod object;
 mod store;
 
-use std::path::Path;
+use std::{fs::File, path::Path};
 
 use anyhow::Context;
 use clap::Parser;
 
 use crate::{
     cli::{Cli, Command},
-    object::Object,
     store::ObjectStore,
 };
 
@@ -27,13 +26,21 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn handle_put(file: impl AsRef<Path>) -> anyhow::Result<()> {
-    let file = file.as_ref();
-    let object =
-        Object::from_file(file).with_context(|| format!("failed to read '{}'", file.display()))?;
+    let file_path = file.as_ref();
+    let file_stream = File::open(file_path)
+        .with_context(|| format!("failed to open '{}'", file_path.display()))?;
 
-    let store = ObjectStore::new(Path::new("."));
+    let store = ObjectStore::new(Path::new("."))?;
+    let object = store
+        .put(file_stream)
+        .with_context(|| format!("failed to store '{}'", file_path.display()))?;
 
-    store.put(&object)?;
+    eprintln!(
+        "Stored {:?} object ({} bytes) from '{}'",
+        object.kind(),
+        object.size(),
+        file_path.display()
+    );
 
     println!("{}", object.id());
 
