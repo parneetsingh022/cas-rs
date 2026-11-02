@@ -1,103 +1,82 @@
-//! Content-addressed object identifiers.
-//!
-//! This module provides [`ObjectId`], a 256-bit identifier derived from
-//! the blake3 hash of an object's contents.
-//!
-//! Object identifiers can be converted to and from hexadecimal strings.
+use crate::object::ObjectId;
 
-use crate::errors::{Error, Result};
-
-/// A SHA-256 identifier for content-addressed objects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ObjectId([u8; 32]);
-
-impl ObjectId {
-    pub fn new(data: impl AsRef<[u8]>) -> Self {
-        Self(blake3::hash(data.as_ref()).into())
-    }
+pub struct Hasher {
+    inner: blake3::Hasher,
 }
 
-impl std::fmt::Display for ObjectId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in &self.0 {
-            write!(f, "{byte:02x}")?;
+impl Hasher {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            inner: blake3::Hasher::new(),
         }
-        Ok(())
     }
-}
 
-impl std::str::FromStr for ObjectId {
-    type Err = Error;
+    pub fn update(&mut self, data: &[u8]) {
+        self.inner.update(data);
+    }
 
-    fn from_str(s: &str) -> Result<Self> {
-        let mut bytes = [0u8; 32];
-        hex::decode_to_slice(s, &mut bytes)?;
-        Ok(Self(bytes))
+    pub fn finalize(&self) -> ObjectId {
+        ObjectId::new(*self.inner.finalize().as_bytes())
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod hasher_tests {
     use super::*;
-
     #[test]
-    fn test_object_id_init() -> Result<()> {
-        let obj_id = ObjectId::new("Hello World");
-        let expected = "41f8394111eb713a22165c46c90ab8f0fd9399c92028fd6d288944b23ff5bf76";
+    fn empty_hasher_produces_correct_hash() {
+        let hasher = Hasher::new();
+        let id = hasher.finalize();
 
-        assert_eq!(obj_id.to_string(), expected);
-
-        Ok(())
+        // Compare against the standard blake3 one-shot hash for an empty byte array
+        let expected_bytes = *blake3::hash(b"").as_bytes();
+        assert_eq!(id, ObjectId::new(expected_bytes));
     }
 
     #[test]
-    fn empty_content_has_correct_hash() {
-        let id = ObjectId::new("");
+    fn single_update_produces_correct_hash() {
+        let mut hasher = Hasher::new();
+        hasher.update(b"Hello World");
+        let id = hasher.finalize();
 
-        assert_eq!(
-            id.to_string(),
-            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
-        );
+        let expected_bytes = *blake3::hash(b"Hello World").as_bytes();
+        assert_eq!(id, ObjectId::new(expected_bytes));
     }
 
     #[test]
-    fn string_and_bytes_produce_same_id() {
-        let a = ObjectId::new("Hello World");
-        let b = ObjectId::new(b"Hello World");
+    fn incremental_updates_match_single_update() {
+        let mut chunked_hasher = Hasher::new();
+        chunked_hasher.update(b"Hello");
+        chunked_hasher.update(b" ");
+        chunked_hasher.update(b"World");
+        let chunked_id = chunked_hasher.finalize();
 
-        assert_eq!(a, b);
+        let mut single_hasher = Hasher::new();
+        single_hasher.update(b"Hello World");
+        let single_id = single_hasher.finalize();
+
+        // Proves that streaming chunks produces the exact same ID as a bulk write
+        assert_eq!(chunked_id, single_id);
     }
 
     #[test]
-    fn different_content_produces_different_ids() {
-        let a = ObjectId::new("hello");
-        let b = ObjectId::new("Hello");
+    fn finalize_does_not_consume_hasher() {
+        let mut hasher = Hasher::new();
+        hasher.update(b"Initial data");
 
-        assert_ne!(a, b);
-    }
+        let id1 = hasher.finalize();
 
-    #[test]
-    fn object_id_roundtrip() {
-        let original = ObjectId::new("Hello World");
+        // Finalize takes &self, so it shouldn't consume or mutate the state
+        let id2 = hasher.finalize();
+        assert_eq!(id1, id2);
 
-        let parsed: ObjectId = original.to_string().parse().unwrap();
+        // We should be able to continue streaming after finalizing
+        hasher.update(b" and more data");
+        let id3 = hasher.finalize();
 
-        assert_eq!(original, parsed);
-    }
-
-    #[test]
-    fn invalid_object_id_is_rejected() {
-        assert!("invalid".parse::<ObjectId>().is_err());
-        assert!("abcd".parse::<ObjectId>().is_err());
-        assert!("z".repeat(64).parse::<ObjectId>().is_err());
-    }
-
-    #[test]
-    fn invalid_object_id_returns_hex_parse_error() {
-        let err_length = "abcd".parse::<ObjectId>().unwrap_err();
-        assert!(matches!(err_length, Error::HexParse(_)));
-
-        let err_chars = "z".repeat(64).parse::<ObjectId>().unwrap_err();
-        assert!(matches!(err_chars, Error::HexParse(_)));
+        let expected_bytes = *blake3::hash(b"Initial data and more data").as_bytes();
+        assert_eq!(id3, ObjectId::new(expected_bytes));
+        assert_ne!(id1, id3);
     }
 }

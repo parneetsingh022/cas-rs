@@ -1,122 +1,165 @@
-use std::io;
-use std::{fs, path::Path};
-
 use crate::errors::{Error, Result};
-use crate::hash::ObjectId;
+
+// =============================================================================
+// OBJECT ID
+// =============================================================================
+
+/// A SHA-256 identifier for content-addressed objects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ObjectId([u8; 32]);
+
+impl ObjectId {
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl std::fmt::Display for ObjectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in &self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for ObjectId {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let mut bytes = [0u8; 32];
+        hex::decode_to_slice(s, &mut bytes)?;
+        Ok(Self(bytes))
+    }
+}
+
+// =============================================================================
+// OBJECT METADATA
+// =============================================================================
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ObjectKind {
+    Blob,
+}
+
+impl std::fmt::Display for ObjectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectKind::Blob => write!(f, "blob"),
+        }
+    }
+}
+
+// =============================================================================
+// OBJECT
+// =============================================================================
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Object {
     id: ObjectId,
-    data: Vec<u8>,
+    kind: ObjectKind,
+    size: usize,
 }
 
 impl Object {
-    pub fn new(data: &[u8]) -> Self {
-        Self {
-            id: ObjectId::new(data),
-            data: data.to_vec(),
-        }
-    }
-
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        let path_ref = path.as_ref();
-        let data = fs::read(path_ref).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => Error::InvalidPath {
-                path: path_ref.to_path_buf(),
-            },
-            _ => Error::Io(e),
-        })?;
-
-        Ok(Self::new(&data))
-    }
-
-    pub fn data(&self) -> &[u8] {
-        self.data.as_ref()
+    pub fn new(id: ObjectId, kind: ObjectKind, size: usize) -> Self {
+        Self { id, kind, size }
     }
 
     pub fn id(&self) -> ObjectId {
         self.id
     }
+
+    pub fn kind(&self) -> ObjectKind {
+        self.kind
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod object_id_tests {
     use super::*;
 
     #[test]
-    fn object_from_bytes() {
-        let data = b"Hello World";
-        let object = Object::new(data);
+    fn display_formats_as_hex_string() {
+        let bytes = [0xab; 32];
+        let id = ObjectId::new(bytes);
 
-        assert_eq!(object.data, data);
-        assert_eq!(object.id, ObjectId::new(data));
+        let expected = "ab".repeat(32);
+        assert_eq!(id.to_string(), expected);
     }
 
     #[test]
-    fn empty_object() {
-        let object = Object::new(b"");
+    fn object_id_roundtrip() {
+        let bytes = [0x12; 32];
+        let original = ObjectId::new(bytes);
 
-        assert!(object.data.is_empty());
-        assert_eq!(object.id, ObjectId::new(b""));
+        let parsed: ObjectId = original.to_string().parse().unwrap();
+
+        assert_eq!(original, parsed);
     }
 
     #[test]
-    fn binary_object() {
-        let data = [0x00, 0x01, 0xFF, 0x80];
-        let object = Object::new(&data);
-
-        assert_eq!(object.data, data);
-        assert_eq!(object.id, ObjectId::new(data));
+    fn invalid_object_id_is_rejected() {
+        assert!("invalid".parse::<ObjectId>().is_err());
+        assert!("abcd".parse::<ObjectId>().is_err());
+        assert!("z".repeat(64).parse::<ObjectId>().is_err());
     }
 
     #[test]
-    fn object_owns_data() {
-        let mut data = vec![1, 2, 3];
-        let object = Object::new(&data);
+    fn invalid_object_id_returns_hex_parse_error() {
+        let err_length = "abcd".parse::<ObjectId>().unwrap_err();
+        assert!(matches!(err_length, Error::HexParse(_)));
 
-        data[0] = 99;
+        let err_chars = "z".repeat(64).parse::<ObjectId>().unwrap_err();
+        assert!(matches!(err_chars, Error::HexParse(_)));
+    }
+}
 
-        assert_eq!(object.data, [1, 2, 3]);
+#[cfg(test)]
+mod object_tests {
+    use super::*;
+
+    #[test]
+    fn object_creation_and_getters() {
+        // Using a dummy 32-byte array for the ObjectId dependency
+        let id = ObjectId::new([0xab; 32]);
+        let kind = ObjectKind::Blob;
+        let size = 1024;
+
+        let object = Object::new(id, kind, size);
+
+        assert_eq!(object.id(), id);
+        assert_eq!(object.kind(), ObjectKind::Blob);
+        assert_eq!(object.size(), 1024);
     }
 
     #[test]
-    fn object_from_file() -> Result<()> {
-        let mut file = tempfile::NamedTempFile::new()?;
-        use std::io::Write;
+    fn object_equality() {
+        let id1 = ObjectId::new([0x01; 32]);
+        let id2 = ObjectId::new([0x02; 32]);
 
-        file.write_all(b"Hello World")?;
+        let obj1 = Object::new(id1, ObjectKind::Blob, 512);
+        let obj2 = Object::new(id1, ObjectKind::Blob, 512);
+        let obj3 = Object::new(id2, ObjectKind::Blob, 512);
+        let obj4 = Object::new(id1, ObjectKind::Blob, 1024); // Different size
 
-        let object = Object::from_file(file.path())?;
-
-        assert_eq!(object.data, b"Hello World");
-        assert_eq!(object.id, ObjectId::new(b"Hello World"));
-
-        Ok(())
+        assert_eq!(obj1, obj2);
+        assert_ne!(obj1, obj3); // Fails on ID
+        assert_ne!(obj1, obj4); // Fails on size
     }
 
     #[test]
-    fn object_from_empty_file() -> Result<()> {
-        let file = tempfile::NamedTempFile::new()?;
-        let object = Object::from_file(file.path())?;
+    fn object_clone() {
+        let id = ObjectId::new([0xff; 32]);
+        let original = Object::new(id, ObjectKind::Blob, 2048);
 
-        assert!(object.data.is_empty());
-        assert_eq!(object.id, ObjectId::new(b""));
+        #[allow(clippy::redundant_clone)]
+        let cloned = original.clone();
 
-        Ok(())
-    }
-
-    #[test]
-    fn object_from_missing_file() -> Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("missing.txt");
-
-        let result = Object::from_file(&path);
-
-        assert!(matches!(
-            result,
-            Err(Error::InvalidPath { path: ref p }) if p == &path
-        ));
-
-        Ok(())
+        assert_eq!(original, cloned);
     }
 }
