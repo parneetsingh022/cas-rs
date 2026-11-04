@@ -1,4 +1,4 @@
-# cas-rs
+# hashb
 A lightweight content-addressable storage engine written in Rust.
 
 ## Usage
