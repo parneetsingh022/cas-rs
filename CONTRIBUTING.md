@@ -1,6 +1,6 @@
-# Contributing to cas-rs
+# Contributing to hashb
 
-Thank you for your interest in contributing to **cas-rs**! Whether you are reporting a bug, proposing a new feature, or submitting a pull request, your help is appreciated.
+Thank you for your interest in contributing to **hashb**! Whether you are reporting a bug, proposing a new feature, or submitting a pull request, your help is appreciated.
 
 ## Development Setup
 
