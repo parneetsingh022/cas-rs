@@ -9,11 +9,11 @@ The following command stores a file into the local CAS:
 cargo run -- put <file_path>
 ```
 
-The file is copied into the ./cas/objects/ directory relative to the current working directory. To prevent OS-level performance degradation from storing thousands of files in a single folder, hashb uses a two-level sharded directory structure.
+The file is copied into the ./.hsb/objects/ directory relative to the current working directory. To prevent OS-level performance degradation from storing thousands of files in a single folder, hashb uses a two-level sharded directory structure.
 
 The first two characters of the object's BLAKE3 cryptographic hash create a parent subdirectory, and the remaining 62 characters form the file itself. This combined hash serves as the unique object ID for future retrieval:
 ```
-./cas/objects/
+./.hsb/objects/
 ├── a5/
 │   └── 91a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e
 ├── e3/

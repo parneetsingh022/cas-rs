@@ -47,10 +47,10 @@ fn test_put_creates_object_file_in_store() -> Result<(), Box<dyn std::error::Err
 
     let (dir, file_name) = expected_hash.split_at(2);
 
-    // Update this chain to explicitly include .cas and objects
+    // Update this chain to explicitly include .hsb and objects
     let stored_file_path = workspace
         .path()
-        .join(".cas")
+        .join(".hsb")
         .join("objects")
         .join(dir)
         .join(file_name);
@@ -88,7 +88,7 @@ fn test_put_reads_from_stdin() -> Result<(), Box<dyn std::error::Error>> {
 
     let stored_file_path = workspace
         .path()
-        .join(".cas")
+        .join(".hsb")
         .join("objects")
         .join(dir)
         .join(file_name);
