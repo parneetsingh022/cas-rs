@@ -1,5 +1,6 @@
+use directories::ProjectDirs;
 use std::{
-    fs,
+    env, fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
 };
@@ -12,7 +13,21 @@ use crate::{
     object::{Object, ObjectId, ObjectKind},
 };
 
-const STORAGE_BASE_DIR: &str = ".hsb";
+fn get_storage_dir() -> Result<PathBuf> {
+    // check path env HASHB_DEFAULT_STORAGE
+    if let Some(path) = env::var_os("HASHB_DEFAULT_STORAGE") {
+        return Ok(PathBuf::from(path));
+    }
+
+    // Revert to default storage directory
+    let dirs = ProjectDirs::from("", "", "hashb")
+        .ok_or_else(|| io::Error::other(
+            "Could not determine the default application data directory. \
+            Please set the HASHB_DEFAULT_STORAGE environment variable to specify a storage path manually."
+        ))?;
+
+    Ok(dirs.data_local_dir().to_path_buf())
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
@@ -22,19 +37,21 @@ pub struct ObjectStore {
 }
 
 impl ObjectStore {
-    pub fn new(root: impl AsRef<Path>) -> Result<Self> {
-        let root_path = root.as_ref();
+    pub fn new(root: Option<impl AsRef<Path>>) -> Result<Self> {
+        // Choose system storage directory unless specified by the user
+        // using `--store` option.
+        let root_path = match root {
+            Some(path) => path.as_ref().to_path_buf(),
+            None => get_storage_dir()?
+        };
 
         if !root_path.exists() {
             return Err(Error::InvalidPath {
-                path: root_path.to_path_buf(),
+                path: root_path,
             });
         }
-
-        let base_path = root_path.join(STORAGE_BASE_DIR);
-
-        let temp_dir = base_path.join("tmp");
-        let objects_dir = base_path.join("objects");
+        let temp_dir = root_path.join("tmp");
+        let objects_dir = root_path.join("objects");
 
         // We only check/create temp once to avoid
         // IO checking overhead during put.
@@ -105,6 +122,7 @@ impl ObjectStore {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     /// Helper function purely for generating IDs in tests
@@ -151,9 +169,9 @@ mod tests {
     #[test]
     fn new_initializes_internal_directories() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
-        let expected_base = dir.path().join(STORAGE_BASE_DIR);
+        let expected_base = dir.path();
         let expected_temp = expected_base.join("tmp");
         let expected_objects = expected_base.join("objects");
 
@@ -171,7 +189,7 @@ mod tests {
     fn new_fails_if_root_does_not_exist() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let non_existent_path = dir.path().join("does_not_exist");
-        let result = ObjectStore::new(&non_existent_path);
+        let result = ObjectStore::new(Some(&non_existent_path));
 
         assert!(result.is_err());
         Ok(())
@@ -180,7 +198,7 @@ mod tests {
     #[test]
     fn new_succeeds_if_root_exists() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
-        let result = ObjectStore::new(dir.path());
+        let result = ObjectStore::new(Some(dir.path()));
 
         assert!(result.is_ok());
         Ok(())
@@ -189,7 +207,7 @@ mod tests {
     #[test]
     fn object_path_uses_hash_prefix() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         // Use the test helper here
         let id = hash_test_data(b"Hello World");
@@ -197,7 +215,6 @@ mod tests {
 
         let expected = dir
             .path()
-            .join(STORAGE_BASE_DIR)
             .join("objects")
             .join(&hash[..2])
             .join(&hash[2..]);
@@ -210,7 +227,7 @@ mod tests {
     #[test]
     fn put_stores_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
         let data = b"Hello World";
 
         // put() now reads the stream and returns the Object metadata
@@ -226,7 +243,7 @@ mod tests {
     #[test]
     fn put_creates_parent_directories() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         let object = store.put(&b"Hello World"[..])?;
         let path = store.object_path(object.id());
@@ -239,7 +256,7 @@ mod tests {
     #[test]
     fn put_existing_object_succeeds() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
         let data = b"Hello World";
 
         let object1 = store.put(&data[..])?;
@@ -254,7 +271,7 @@ mod tests {
     #[test]
     fn put_does_not_overwrite_existing_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
         let data = b"Hello World";
 
         // Predict the ID before we stream it
@@ -276,7 +293,7 @@ mod tests {
     #[test]
     fn put_leaves_no_temp_files() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
         let data = b"Hello World";
 
         let object = store.put(&data[..])?;
@@ -288,7 +305,7 @@ mod tests {
         assert_eq!(fs::read_dir(path.parent().unwrap())?.count(), 1);
 
         // Ensure our new dedicated `tmp/` folder is empty after streams finish
-        let tmp_dir = dir.path().join(STORAGE_BASE_DIR).join("tmp");
+        let tmp_dir = dir.path().join("tmp");
         assert_eq!(fs::read_dir(tmp_dir)?.count(), 0);
 
         Ok(())
@@ -297,7 +314,7 @@ mod tests {
     #[test]
     fn put_empty_object() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         let object = store.put(&b""[..])?;
         let path = store.object_path(object.id());
@@ -312,7 +329,7 @@ mod tests {
     #[test]
     fn put_existing_object_cleans_up_temp_file() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
         let data = b"Hello world";
 
         // write normally
@@ -327,7 +344,7 @@ mod tests {
         assert_eq!(fs::read_dir(obj_path.parent().unwrap())?.count(), 1);
 
         // Verify the tmp directory is completely empty
-        let tmp_dir = dir.path().join(STORAGE_BASE_DIR).join("tmp");
+        let tmp_dir = dir.path().join("tmp");
         assert_eq!(fs::read_dir(tmp_dir)?.count(), 0);
 
         Ok(())
@@ -336,7 +353,7 @@ mod tests {
     #[test]
     fn put_tracks_object_size() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         // "Hello World" is exactly 11 bytes
         let data = b"Hello World";
@@ -350,7 +367,7 @@ mod tests {
     #[test]
     fn put_recovers_from_interrupted_read() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         let data = b"Resilient streaming";
         let reader = InterruptingReader {
@@ -372,7 +389,7 @@ mod tests {
     #[test]
     fn put_handles_large_streams_across_chunk_boundaries() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         // Create a payload larger than the 64KB buffer
         let size = 100 * 1024;
@@ -391,7 +408,7 @@ mod tests {
     #[test]
     fn put_bubbles_up_hard_read_errors() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let store = ObjectStore::new(dir.path()).unwrap();
+        let store = ObjectStore::new(Some(dir.path())).unwrap();
 
         let result = store.put(FailingReader);
 
