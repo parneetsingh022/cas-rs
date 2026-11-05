@@ -12,7 +12,7 @@ use crate::{
     object::{Object, ObjectId, ObjectKind},
 };
 
-const STORAGE_BASE_DIR: &str = ".cas";
+pub const STORAGE_BASE_DIR: &str = ".hsb";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
@@ -197,7 +197,8 @@ mod tests {
 
         let expected = dir
             .path()
-            .join(".cas/objects")
+            .join(STORAGE_BASE_DIR)
+            .join("objects")
             .join(&hash[..2])
             .join(&hash[2..]);
 
