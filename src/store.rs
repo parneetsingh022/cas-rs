@@ -42,13 +42,11 @@ impl ObjectStore {
         // using `--store` option.
         let root_path = match root {
             Some(path) => path.as_ref().to_path_buf(),
-            None => get_storage_dir()?
+            None => get_storage_dir()?,
         };
 
         if !root_path.exists() {
-            return Err(Error::InvalidPath {
-                path: root_path,
-            });
+            return Err(Error::InvalidPath { path: root_path });
         }
         let temp_dir = root_path.join("tmp");
         let objects_dir = root_path.join("objects");
@@ -213,11 +211,7 @@ mod tests {
         let id = hash_test_data(b"Hello World");
         let hash = id.to_string();
 
-        let expected = dir
-            .path()
-            .join("objects")
-            .join(&hash[..2])
-            .join(&hash[2..]);
+        let expected = dir.path().join("objects").join(&hash[..2]).join(&hash[2..]);
 
         assert_eq!(store.object_path(id), expected);
 

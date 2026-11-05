@@ -17,5 +17,4 @@ pub struct Cli {
 pub enum Command {
     /// Save a file to the store and output its unique hash.
     Put { file: Option<PathBuf> },
-
 }

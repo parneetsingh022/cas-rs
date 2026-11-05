@@ -31,7 +31,10 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_put(file: Option<impl AsRef<Path>>, store_path: Option<impl AsRef<Path>>) -> anyhow::Result<()> {
+fn handle_put(
+    file: Option<impl AsRef<Path>>,
+    store_path: Option<impl AsRef<Path>>,
+) -> anyhow::Result<()> {
     let file_path = file.as_ref().map(AsRef::as_ref);
 
     let store = ObjectStore::new(store_path.as_ref())?;
