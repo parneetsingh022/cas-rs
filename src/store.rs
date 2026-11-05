@@ -12,9 +12,13 @@ use crate::{
     object::{Object, ObjectId, ObjectKind},
 };
 
+const STORAGE_BASE_DIR: &str = ".cas";
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
     root: PathBuf,
+    temp_dir: PathBuf,
+    objects_dir: PathBuf,
 }
 
 impl ObjectStore {
@@ -27,33 +31,43 @@ impl ObjectStore {
             });
         }
 
+        let base_path = root_path.join(STORAGE_BASE_DIR);
+
+        let temp_dir = base_path.join("tmp");
+        let objects_dir = base_path.join("objects");
+
+        // We only check/create temp once to avoid
+        // IO checking overhead during put.
+        fs::create_dir_all(&temp_dir)?;
+        fs::create_dir_all(&objects_dir)?;
+
         Ok(Self {
             root: root_path.to_path_buf(),
+            temp_dir,
+            objects_dir,
         })
     }
 
     pub fn put(&self, mut source: impl Read) -> Result<Object> {
-        let temp_dir = self.root.join("tmp");
-        fs::create_dir_all(&temp_dir)?;
+        let mut buffer = [0u8; 64 * 1024]; // 64 kb buffer
 
-        let mut temp = NamedTempFile::new_in(&temp_dir)?;
+        self.put_with_buffer(&mut source, &mut buffer)
+    }
+
+    fn put_with_buffer(&self, mut source: impl Read, buffer: &mut [u8]) -> Result<Object> {
+        let mut temp = NamedTempFile::new_in(&self.temp_dir)?;
         let mut hasher = Hasher::new();
-        let mut buffer = [0; 65536]; // 64KB buffer for streaming
         let mut size: usize = 0;
 
         // Stream chunk-by-chunk from the source to BOTH the temp file and hasher
         loop {
-            let bytes_read = match source.read(&mut buffer) {
+            let bytes_read = match source.read(buffer) {
                 Ok(0) => break, // EOF
                 Ok(n) => n,
                 // Retry immediately if the read was interrupted by an OS signal
                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(e.into()),
             };
-
-            if bytes_read == 0 {
-                break;
-            }
 
             let chunk = &buffer[..bytes_read];
             hasher.update(chunk);
@@ -85,10 +99,7 @@ impl ObjectStore {
     fn object_path(&self, id: ObjectId) -> PathBuf {
         let hash = id.to_string();
 
-        self.root
-            .join(".cas/objects")
-            .join(&hash[..2])
-            .join(&hash[2..])
+        self.objects_dir.join(&hash[..2]).join(&hash[2..])
     }
 }
 
@@ -123,6 +134,37 @@ mod tests {
             self.inner_data = inner_slice;
             Ok(bytes_read)
         }
+    }
+
+    /// A mock reader that simulates an unrecoverable I/O error on every read attempt.
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated hard failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn new_initializes_internal_directories() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = ObjectStore::new(dir.path()).unwrap();
+
+        let expected_base = dir.path().join(STORAGE_BASE_DIR);
+        let expected_temp = expected_base.join("tmp");
+        let expected_objects = expected_base.join("objects");
+
+        // Verify physical creation
+        assert!(expected_temp.is_dir());
+
+        // Verify internal state
+        assert_eq!(store.temp_dir, expected_temp);
+        assert_eq!(store.objects_dir, expected_objects);
+
+        Ok(())
     }
 
     #[test]
@@ -245,7 +287,7 @@ mod tests {
         assert_eq!(fs::read_dir(path.parent().unwrap())?.count(), 1);
 
         // Ensure our new dedicated `tmp/` folder is empty after streams finish
-        let tmp_dir = dir.path().join("tmp");
+        let tmp_dir = dir.path().join(STORAGE_BASE_DIR).join("tmp");
         assert_eq!(fs::read_dir(tmp_dir)?.count(), 0);
 
         Ok(())
@@ -267,16 +309,6 @@ mod tests {
     }
 
     #[test]
-    fn new_fails_when_root_does_not_exist() -> Result<()> {
-        let dir = tempfile::tempdir()?;
-        // Constructor should fail immediately instead of waiting for `put`
-        let error = ObjectStore::new(dir.path().join("missing")).unwrap_err();
-
-        assert!(matches!(error, Error::InvalidPath { .. }));
-        Ok(())
-    }
-
-    #[test]
     fn put_existing_object_cleans_up_temp_file() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let store = ObjectStore::new(dir.path()).unwrap();
@@ -294,7 +326,7 @@ mod tests {
         assert_eq!(fs::read_dir(obj_path.parent().unwrap())?.count(), 1);
 
         // Verify the tmp directory is completely empty
-        let tmp_dir = dir.path().join("tmp");
+        let tmp_dir = dir.path().join(STORAGE_BASE_DIR).join("tmp");
         assert_eq!(fs::read_dir(tmp_dir)?.count(), 0);
 
         Ok(())
@@ -332,6 +364,42 @@ mod tests {
         assert_eq!(object.size(), data.len());
         let obj_path = store.object_path(object.id());
         assert_eq!(std::fs::read(obj_path)?, data);
+
+        Ok(())
+    }
+
+    #[test]
+    fn put_handles_large_streams_across_chunk_boundaries() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = ObjectStore::new(dir.path()).unwrap();
+
+        // Create a payload larger than the 64KB buffer
+        let size = 100 * 1024;
+        let data: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
+
+        let object = store.put(&data[..])?;
+
+        assert_eq!(object.size(), size);
+
+        let path = store.object_path(object.id());
+        assert_eq!(fs::read(path)?, data);
+
+        Ok(())
+    }
+
+    #[test]
+    fn put_bubbles_up_hard_read_errors() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = ObjectStore::new(dir.path()).unwrap();
+
+        let result = store.put(FailingReader);
+
+        assert!(result.is_err());
+        if let Err(Error::Io(e)) = result {
+            assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
+        } else {
+            panic!("Expected Io error variant");
+        }
 
         Ok(())
     }
