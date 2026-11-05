@@ -1,0 +1,45 @@
+diff --git a/src/store.rs b/src/store.rs
+index b9cae9b..79b6386 100644
+--- a/src/store.rs
++++ b/src/store.rs
+@@ -39,6 +39,7 @@ impl ObjectStore {
+         // We only check/create temp once to avoid
+         // IO checking overhead during put.
+         fs::create_dir_all(&temp_dir)?;
++        fs::create_dir_all(&objects_dir)?;
+ 
+         Ok(Self {
+             root: root_path.to_path_buf(),
+@@ -48,14 +49,19 @@ impl ObjectStore {
+     }
+ 
+     pub fn put(&self, mut source: impl Read) -> Result<Object> {
++        let mut buffer = vec![0u8; 64 * 1024]; // 64 kb buffer
++
++        self.put_with_buffer(&mut source, &mut buffer)
++    }
++
++    fn put_with_buffer(&self, mut source: impl Read, buffer: &mut [u8]) -> Result<Object> {
+         let mut temp = NamedTempFile::new_in(&self.temp_dir)?;
+         let mut hasher = Hasher::new();
+-        let mut buffer = vec![0; 65536]; // 64KB buffer for streaming
+         let mut size: usize = 0;
+ 
+         // Stream chunk-by-chunk from the source to BOTH the temp file and hasher
+         loop {
+-            let bytes_read = match source.read(&mut buffer) {
++            let bytes_read = match source.read(buffer) {
+                 Ok(0) => break, // EOF
+                 Ok(n) => n,
+                 // Retry immediately if the read was interrupted by an OS signal
+@@ -63,10 +69,6 @@ impl ObjectStore {
+                 Err(e) => return Err(e.into()),
+             };
+ 
+-            if bytes_read == 0 {
+-                break;
+-            }
+-
+             let chunk = &buffer[..bytes_read];
+             hasher.update(chunk);
+             temp.write_all(chunk)?;
