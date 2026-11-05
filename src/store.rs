@@ -12,7 +12,7 @@ use crate::{
     object::{Object, ObjectId, ObjectKind},
 };
 
-pub const STORAGE_BASE_DIR: &str = ".hsb";
+const STORAGE_BASE_DIR: &str = ".hsb";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ObjectStore {
