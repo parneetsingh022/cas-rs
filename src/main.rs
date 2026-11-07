@@ -22,17 +22,22 @@ use crate::{
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
+    let store_path = args.store;
+
     match args.command {
-        Command::Put { file } => handle_put(file)?,
+        Command::Put { file } => handle_put(file, store_path)?,
     }
 
     Ok(())
 }
 
-fn handle_put(file: Option<impl AsRef<Path>>) -> anyhow::Result<()> {
+fn handle_put(
+    file: Option<impl AsRef<Path>>,
+    store_path: Option<impl AsRef<Path>>,
+) -> anyhow::Result<()> {
     let file_path = file.as_ref().map(AsRef::as_ref);
 
-    let store = ObjectStore::new(".")?;
+    let store = ObjectStore::new(store_path.as_ref())?;
 
     let object = match file_path {
         Some(path) => {
