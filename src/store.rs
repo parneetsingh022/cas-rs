@@ -41,13 +41,15 @@ impl ObjectStore {
         // Choose system storage directory unless specified by the user
         // using `--store` option.
         let root_path = match root {
-            Some(path) => path.as_ref().to_path_buf(),
+            Some(path) if path.as_ref().is_dir() => path.as_ref().to_path_buf(),
+            Some(path) => {
+                return Err(Error::InvalidPath {
+                    path: path.as_ref().to_path_buf(),
+                });
+            }
             None => get_storage_dir()?,
         };
 
-        if !root_path.exists() {
-            return Err(Error::InvalidPath { path: root_path });
-        }
         let temp_dir = root_path.join("tmp");
         let objects_dir = root_path.join("objects");
 
@@ -184,12 +186,17 @@ mod tests {
     }
 
     #[test]
-    fn new_fails_if_root_does_not_exist() -> anyhow::Result<()> {
+    fn new_fails_if_custom_root_does_not_exist() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let non_existent_path = dir.path().join("does_not_exist");
+
+        assert!(!non_existent_path.exists());
+
         let result = ObjectStore::new(Some(&non_existent_path));
 
-        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::InvalidPath { .. })));
+        assert!(!non_existent_path.exists());
+
         Ok(())
     }
 
